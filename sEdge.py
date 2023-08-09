@@ -21,8 +21,8 @@ Reading a device register will require four steps:
 '''
 import json
 import sys
+from time import time
 from pyModbusTCP.client import ModbusClient
-from pyModbusTCP import utils
 
 sunSpecModelPath = "../models"
 
@@ -56,7 +56,11 @@ class sEdge :
         # connect to inverter, discover models used, and map out register locations
     def __init__(self, host, port):
             # establish connection
-        self.inverter = ModbusClient(host=host, port=port)
+        try:
+            self.inverter = ModbusClient(host=host, port=port)
+        except ValueError:
+            print("Error with host or port params")
+            sys.exit()
 
             # register groups are identified by a "model identifier" from which specific registers can be located
             # The default start of the register groups is 40000, with the first two registers (16-bit) containing "SunS"
@@ -247,7 +251,7 @@ class sEdge :
                 bit_values = {}
                 for s in p['symbol_table'] :
                     bit = (value>>s) & 0x1
-                    bit_values[p['symbol_table'][s]] = bit
+                    bit_values[p['symbol_table'][s]] = (bit==1)
                 value = bit_values
             else :
                 value = p_data[0]<<16 | p_data[1]
@@ -280,7 +284,7 @@ class point:
         return value
 
 if __name__ == '__main__' :
-    system = sEdge('192.168.1.67', 1502)
+    system = sEdge('solaredgeinv.local', 1502)
     for h in system.headers :
         if h.ID==1 :
             print(h.ID, h.Md, h.Opt)
