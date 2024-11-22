@@ -6,9 +6,9 @@ from pyModbusTCP.client import ModbusClient
 from pyModbusTCP import utils
 
 sunSpecModelPath = "../models"
-#c = ModbusClient(host='192.168.1.67', port=1502)
-c = ModbusClient(host='solaredgeinv.local', port=1502)
-if 0 :
+c = ModbusClient(host='192.168.12.186', port=1502)
+#c = ModbusClient(host='solaredgeinv.local', port=1502)
+if False: # True :
     dump_size = 16
     previous = ''
     for i in range (0,65536,dump_size) :

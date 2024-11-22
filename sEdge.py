@@ -152,13 +152,13 @@ class sEdge :
         for h in self.headers :
                 # first find a common header that matches device_name
             if common_header==None :
-                if h.ID==1 and device_name in h.Md :
+                if h.ID==1 and h.Md.startswith(device_name) :
                     common_header = h
-                elif h.ID==1 and device_name in h.Opt :
+                elif h.ID==1 and h.Opt.startswith(device_name) :
                     common_header = h
                 # then find a model member that matches the model name
             else :
-                if model_name in sEdge.models[h.ID]['group']['name'] :
+                if sEdge.models[h.ID]['group']['name'].startswith(model_name)  :
                     member_header = h
                     break
                 elif common_header!=None and h.ID==1 :
@@ -283,10 +283,46 @@ class point:
         value = self.server.extract_value(self.header, self.point_name)
         return value
 
+epilog = """
+<system> is the Manufacturer (Mn) or Model (Md) of the associated common header
+<subsystem> is either the header number or name of the device subsystem
+<registers> is register name within the subsystem
+
+Abbreviated text values will match the first occurance
+"""
 if __name__ == '__main__' :
-    system = sEdge('solaredgeinv.local', 1502)
-    for h in system.headers :
-        if h.ID==1 :
-            print(h.ID, h.Md, h.Opt)
-        else :
-            print(f"{h.ID:5} {sEdge.models[h.ID]['group']['name']:20} | {sEdge.models[h.ID]['group']['label']}")
+    import argparse
+
+    default_ip = '192.168.12.186'
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog)
+    parser.add_argument("registers", help="<system>.<subsystem>.<reg_name>",
+        nargs='+')
+    parser.add_argument("--ip_address", help="IP address of the inverter",
+        default=default_ip)
+    parser.add_argument("--list", help="list all available registers in system",
+        action="store_true")
+
+    args = parser.parse_args()
+    print(args.ip_address)
+
+#   system = sEdge('solaredgeinv.local', 1502)
+#   system = sEdge('192.168.1.67', 1502)
+    system = sEdge(args.ip_address, 1502)
+
+    if args.list:
+        for h in system.headers :
+            if h.ID==1 :
+                print(h.ID, h.Md, h.Opt)
+            else :
+                print(f"{h.ID:5} {sEdge.models[h.ID]['group']['name']:20} | {sEdge.models[h.ID]['group']['label']}")
+    else:
+        points = {}
+        for register in args.registers:
+            (device, module, reg) = register.split('.', maxsplit=3)
+            points[register] = point(system, device, module, reg)
+        system.refresh_readings()
+
+        for p in iter(points):
+            print(f'{p} {points[p].read_point()}')
