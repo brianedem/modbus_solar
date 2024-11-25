@@ -19,12 +19,15 @@ Reading a device register will require four steps:
         value, label, name, units
 
 '''
+import os
 import json
 import sys
 from time import time
 from pyModbusTCP.client import ModbusClient
 
-sunSpecModelPath = "../models"
+cwd = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+sunSpecModelPath = '/'.join((cwd,"models"))
 
     # text is packed two characters per 16-bit modbus register
 def e_text(value):
@@ -97,7 +100,7 @@ class sEdge :
 
                 # load model if needed
             if m_type not in sEdge.models :
-                f = open(sunSpecModelPath+"/json/model_%s.json"%(m_type))
+                f = open('/'.join((sunSpecModelPath,f'json/model_{m_type}.json')))
                 sEdge.models[m_type] = json.load(f)
 
                     # build index and add relative offset information to model
@@ -298,7 +301,7 @@ if __name__ == '__main__' :
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog)
     parser.add_argument("registers", help="<system>.<subsystem>.<reg_name>",
-        nargs='+')
+        nargs='*')
     parser.add_argument("--ip_address", help="IP address of the inverter",
         default=default_ip)
     parser.add_argument("--list", help="list all available registers in system",
@@ -319,10 +322,17 @@ if __name__ == '__main__' :
                 print(f"{h.ID:5} {sEdge.models[h.ID]['group']['name']:20} | {sEdge.models[h.ID]['group']['label']}")
     else:
         points = {}
-        for register in args.registers:
-            (device, module, reg) = register.split('.', maxsplit=3)
-            points[register] = point(system, device, module, reg)
-        system.refresh_readings()
+        if args.registers:
+            for register in args.registers:
+                (device, module, reg) = register.split('.', maxsplit=3)
+                points[register] = point(system, device, module, reg)
+            system.refresh_readings()
 
-        for p in iter(points):
-            print(f'{p} {points[p].read_point()}')
+            for p in points:
+                (value, units) = points[p].read_point()
+                if units:
+                    print(f'{p} {value} {units}')
+                else:
+                    print(f'{p} {value}')
+        else:
+            pass    # TODO add code to dump all?
