@@ -25,9 +25,9 @@ import sys
 from time import time
 from pyModbusTCP.client import ModbusClient
 
-cwd = os.path.dirname(os.path.abspath(sys.argv[0]))
-
-sunSpecModelPath = '/'.join((cwd,"models"))
+# locate the SunSpec JSON model files
+cwd = os.path.dirname(__file__)
+sunSpecModelPath = os.path.join(cwd,"models",'json')
 
     # text is packed two characters per 16-bit modbus register
 def e_text(value):
@@ -100,7 +100,7 @@ class sEdge :
 
                 # load model if needed
             if m_type not in sEdge.models :
-                f = open('/'.join((sunSpecModelPath,f'json/model_{m_type}.json')))
+                f = open(os.path.join(sunSpecModelPath,f'model_{m_type}.json'))
                 sEdge.models[m_type] = json.load(f)
 
                     # build index and add relative offset information to model
