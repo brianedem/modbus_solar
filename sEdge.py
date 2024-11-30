@@ -19,11 +19,14 @@ Reading a device register will require four steps:
         value, label, name, units
 
 '''
+import logging
 import os
-import json
 import sys
+import json
 from time import time
 from pyModbusTCP.client import ModbusClient
+
+log = logging.getLogger(__name__)
 
 # locate the SunSpec JSON model files
 cwd = os.path.dirname(__file__)
@@ -53,6 +56,7 @@ class header :
         self.values = []
 
     # methods for accessing SolarEdge devices
+verbose = False
 class sEdge :
     models = {}
     
@@ -62,8 +66,8 @@ class sEdge :
         try:
             self.inverter = ModbusClient(host=host, port=port)
         except ValueError:
-            print("Error with host or port params")
-            sys.exit()
+            log.exception(f'Unable to connect to modbus client {host}:{port}')
+            raise RuntimeError('Unable to connect to modbus client') from None
 
             # register groups are identified by a "model identifier" from which specific registers can be located
             # The default start of the register groups is 40000, with the first two registers (16-bit) containing "SunS"
@@ -72,11 +76,11 @@ class sEdge :
             # verify the SunS identifier
         m_data = self.inverter.read_holding_registers(reg_addr, 2)
         if m_data==None :
-            print ("ERROR - unable to read SunS marker at register offset %d" % reg_addr)
-            sys.exit()
+            log.exception (f"Unable to read inverter holding register at offset {reg_addr}")
+            raise RuntimeError('Unable to read inverter holding register') from None
         if e_text(m_data) != "SunS" :
-            print ("ERROR - unable to locate SunS marker at register offset %d" % reg_addr)
-            sys.exit()
+            log.exception (f"Unable to locate SunS marker at register offset {reg_addr}")
+            raise RuntimeError('Unable to locate SunS marker') from None
         reg_addr += 2
 
             # walk through the headers and add to the headers list
@@ -88,8 +92,8 @@ class sEdge :
                 # read the model ID
             m_data = self.inverter.read_holding_registers(reg_addr, 2)
             if m_data==None :
-                print ("ERROR - unable to read model ID at register offset %d" % reg_addr)
-                sys.exit()
+                log.exception (f"Unable to read model ID at register offset {reg_addr}")
+                raise RuntimeError('Unable to read model ID') from None
 
                 # check for end
             if m_data[0] == 0xFFFF :
@@ -125,8 +129,8 @@ class sEdge :
                 current_common_header = self.headers[-1]
                 m_data = self.inverter.read_holding_registers(reg_addr, m_length+2)
                 if m_data==None :
-                    print ("ERROR - unable to read model name at register offset %d" % reg_addr)
-                    sys.exit()
+                    log.exception (f"Unable to read common header info at register offset {reg_addr}")
+                    raise RuntimeError('Unable to read common header info') from None
                 current_common_header.values = m_data
                 for p in sEdge.models[1]['group']['points'] :
                     size = p['size']
@@ -142,8 +146,8 @@ class sEdge :
 
             else :
                 if current_common_header is None :
-                    print("Error - expected common header before first model")
-                    sys.exit()
+                    log.exception("Expected a common header before first model")
+                    raise RuntimeError('Expected a common header before first model') from None
                 current_common_header.members.append(sEdge.models[m_type]['group']['name'])
             reg_addr += m_length + 2
 
@@ -169,27 +173,34 @@ class sEdge :
         
             # was a matching common header found?
         if common_header==None :
-            print("Error - unable to locate device %s" % device_name)
-            print(" available device names are:")
-            for h in self.headers :
-                if h.ID==1:
-                    print(" ", h.Md)
-            sys.exit()
+            log.error(f"Unable to locate device {device_name}")
+            if verbose:
+                log.error(f' available device names are:')
+                for h in self.headers :
+                    if h.ID==1:
+                        log.error(f' {h.Md}')
+            return None
 
             # was there a member model with a matching name?
         if member_header==None :
-            print("Unable to locate model member '%s' in %s" % (model_name, common_header.Md))
-            print(" Available members are: ", common_header.members)
-            sys.exit();
+            log.error(f"Unable to locate model member '{model_name}' in {common_header.Md}")
+            if verbose:
+                log.error(f' available members are:')
+                for m in common_header.members:
+                    log.error(f'  {m}')
+            return None
 
             # find the matching point within the points
         point_names = list(sEdge.models[member_header.ID]['group']['point_index'].keys())
         if point_name not in point_names :
-            print("Unable to locate point named %s in %s" % (point_name, model_name))
-            print(" Available parameters are: ", point_names)
-            sys.exit()
+            log.error(f"Unable to locate point named {point_name} in {model_name}")
+            if verbose:
+                log.error(f' available parameters are:')
+                for pn in point_names:
+                    log.error(f'  {pn}')
+            return None
 
-#       print("Found", point_name)
+        log.debug("Found {point_name}")
         member_header.reference_count += 1
 
         return (member_header)
@@ -203,8 +214,8 @@ class sEdge :
         # extract register value from cache and format - used by point.read_point()
     def extract_value(self, header, point_name) :
         if header.values==None :
-            print ("ERROR - no register data to extract %s from", point_name)
-            sys.exit()
+            log.error (f"No register data to extract {point_name} from")
+            return None
         p = sEdge.models[header.ID]['group']['point_index'][point_name]
         p_type = p['type']
         if 'units' in p :
@@ -216,7 +227,7 @@ class sEdge :
             sf_point = sEdge.models[header.ID]['group']['point_index'][sf_name]
             sf_offset = sf_point['offset']
             sf_data = header.values[sf_offset]
-#           print("Scale factor: ", sf_data)
+            log.debug(f"Scale factor: {sf_data}")
             if sf_data == 32768 :
                 p_sf = 0
             elif sf_data & 0x8000 :
@@ -224,12 +235,12 @@ class sEdge :
             else :
                 p_sf = sf_data
             p_sf = 10**p_sf
-#           print("Scale factor: ", p_sf)
+            log.debug("Scale factor: {p_sf}")
         else :
             p_sf = None
         p_data = header.values[p['offset']:][:p['size']]
 
-#       print(p_data, p_type)
+        log.debug(f'{p_data=}, {p_type=}')
         if   p_type == 'int16':
             if p_data[0] == 32768 :
                 value = None
@@ -246,7 +257,7 @@ class sEdge :
             value = p_data[0]<<16 | p_data[1]
 
         elif p_type == 'bitfield32' :
-#           print(p_data)
+            log.debug(f'{p_data=}')
             value = p_data[0]<<16 | p_data[1]
             if value==0xFFFFFFFF :
                 value = None
@@ -269,8 +280,8 @@ class sEdge :
         elif p_type == 'string' :
             value = e_text(p_data)
         else :
-            print("Unknown point type ", p_type)
-            sys.exit()
+            log.error(f"Unknown point type {p_type}")
+            return None
 
         return (value, p_units)
 
@@ -281,6 +292,8 @@ class point:
         self.server = server
         self.point_name = point_name
         self.header = server.locate_point(device_name, model_name, point_name)
+        if self.header is None:
+            raise RuntimeError('Unable to locate data point') from None
         
     def read_point(self, refresh=False) :
         value = self.server.extract_value(self.header, self.point_name)
@@ -295,6 +308,9 @@ Abbreviated text values will match the first occurance
 """
 if __name__ == '__main__' :
     import argparse
+    verbose = 1
+
+    logging.basicConfig(level=logging.INFO)
 
     default_ip = '192.168.12.186'
     parser = argparse.ArgumentParser(
@@ -312,7 +328,10 @@ if __name__ == '__main__' :
 
 #   system = sEdge('solaredgeinv.local', 1502)
 #   system = sEdge('192.168.1.67', 1502)
-    system = sEdge(args.ip_address, 1502)
+    try:
+        system = sEdge(args.ip_address, 1502)
+    except RuntimeError:
+        sys.exit()
 
     if args.list:
         for h in system.headers :
@@ -325,7 +344,12 @@ if __name__ == '__main__' :
         if args.registers:
             for register in args.registers:
                 (device, module, reg) = register.split('.', maxsplit=3)
-                points[register] = point(system, device, module, reg)
+                try:
+                    p = point(system, device, module, reg)
+                except RuntimeError:
+                    print(f'Unknown point {register}')
+                else:
+                    points[register] = p
             system.refresh_readings()
 
             for p in points:
