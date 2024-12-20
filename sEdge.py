@@ -242,7 +242,7 @@ class sEdge :
 
         log.debug(f'{p_data=}, {p_type=}')
         if   p_type == 'int16':
-            if p_data[0] == 32768 :
+            if p_data[0] == 0x8000 :
                 value = None
             elif p_data[0] & 0x8000 :
                 value = (p_data[0]-65536) * p_sf
@@ -253,9 +253,37 @@ class sEdge :
                 value = None
             else :
                 value = p_data[0] * p_sf
+        elif p_type == 'acc16':
+            if p_data[0] == 0x0000 :
+                value = None
+            else :
+                value = p_data[0] * p_sf
+        elif p_type == 'enum16' :
+            if p_data[0] == 0xFFFF:
+                value = None
+            elif 'symbol_table' in p :
+                value = p['symbol_table'][p_data[0]]
+            else :
+                value = p_data[0]
+
+        elif p_type == 'int32' :
+            value = p_data[0]<<16 | p_data[1]
+            if value == 0x80000000:
+                value = None
+            else:
+                value = (value-0xFFFFFFFF) * p_sf
+        elif p_type == 'uint32' :
+            value = p_data[0]<<16 | p_data[1]
+            if value == 0xFFFFFFFF:
+                value = None
+            else:
+                value = value * p_sf
         elif p_type == 'acc32' :
             value = p_data[0]<<16 | p_data[1]
-
+            if value == 0x00000000:
+                value = None
+            else:
+                value = value * p_sf
         elif p_type == 'bitfield32' :
             log.debug(f'{p_data=}')
             value = p_data[0]<<16 | p_data[1]
@@ -271,11 +299,6 @@ class sEdge :
                 value = p_data[0]<<16 | p_data[1]
             pass
 
-        elif p_type == 'enum16' :
-            if 'symbol_table' in p :
-                value = p['symbol_table'][p_data[0]]
-            else :
-                value = p_data[0]
 
         elif p_type == 'string' :
             value = e_text(p_data)
